@@ -26,17 +26,13 @@ function App() {
   }, []);
 
   const PrivateRoute = ({ children }) => {
-    return localStorage.getItem('token') ? (
-      <Layout>{children}</Layout>
-    ) : (
-      <Navigate to="/login" />
-    );
+    return <Layout>{children}</Layout>;
   };
 
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route path="/login" element={<Navigate to="/" />} />
         <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/employees" element={<PrivateRoute><Employees /></PrivateRoute>} />
         <Route path="/company-docs" element={<PrivateRoute><CompanyDocs /></PrivateRoute>} />
