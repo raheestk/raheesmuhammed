@@ -1,97 +1,97 @@
 const express = require('express');
 const router  = express.Router();
-const db      = require('../database');
+const pool    = require('../database');
 const upload  = require('../middlewares/upload');
 const auth    = require('../middlewares/auth');
 
 // GET cheques (filter by status ?status=Pending or ?status=Cleared)
-router.get('/', auth, (req, res) => {
+router.get('/', auth, async (req, res) => {
   const status = req.query.status || 'Pending';
-  // If Pending, sort by cheque_date ASC so upcoming is first
-  // If Cleared, sort by deposit_date DESC so most recently cleared is first
   const order = status === 'Pending' ? 'cheque_date ASC' : 'deposit_date DESC';
-  
-  db.all(
-    `SELECT * FROM cheques_v2 WHERE status = ? ORDER BY ${order}`,
-    [status],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json(rows);
-    }
-  );
+
+  try {
+    const result = await pool.query(
+      `SELECT * FROM cheques_v2 WHERE status = $1 ORDER BY ${order}`,
+      [status]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST – add new pending cheque
-router.post('/', auth, upload.single('cheque_image'), (req, res) => {
+// POST – add new cheque
+router.post('/', auth, upload.single('cheque_image'), async (req, res) => {
   const d = req.body;
-  
   const image = req.file ? req.file.filename : null;
 
-  db.run(
-    `INSERT INTO cheques_v2
-       (received_date, name, cheque_date, amount, custodian, deposit_date, deposited_bank, status, remark, cheque_image)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [d.received_date || null, d.name || 'Unknown', d.cheque_date || null, d.amount || null,
-     d.custodian || null, d.deposit_date || null, d.deposited_bank || null,
-     d.status || 'Pending', d.remark || null, image],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID, message: 'Cheque added.' });
-    }
-  );
+  try {
+    const result = await pool.query(
+      `INSERT INTO cheques_v2
+         (received_date, name, cheque_date, amount, custodian, deposit_date, deposited_bank, status, remark, cheque_image)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+      [d.received_date || null, d.name || 'Unknown', d.cheque_date || null, d.amount || null,
+       d.custodian || null, d.deposit_date || null, d.deposited_bank || null,
+       d.status || 'Pending', d.remark || null, image]
+    );
+    res.json({ id: result.rows[0].id, message: 'Cheque added.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// PUT – update existing cheque metadata
-router.put('/:id', auth, upload.single('cheque_image'), (req, res) => {
+// PUT – update existing cheque
+router.put('/:id', auth, upload.single('cheque_image'), async (req, res) => {
   const d = req.body;
-  if (!d.name) {
-    return res.status(400).json({ error: 'Name is required.' });
-  }
+  if (!d.name) return res.status(400).json({ error: 'Name is required.' });
 
-  db.get('SELECT cheque_image FROM cheques_v2 WHERE id = ?', [req.params.id], (err, row) => {
-    if (err || !row) return res.status(404).json({ error: 'Not found.' });
+  try {
+    const rowRes = await pool.query('SELECT cheque_image FROM cheques_v2 WHERE id = $1', [req.params.id]);
+    if (rowRes.rows.length === 0) return res.status(404).json({ error: 'Not found.' });
 
-    const image = req.file ? req.file.filename : row.cheque_image;
+    const image = req.file ? req.file.filename : rowRes.rows[0].cheque_image;
 
-    db.run(
+    await pool.query(
       `UPDATE cheques_v2
-       SET received_date=?, name=?, cheque_date=?, amount=?, custodian=?,
-           deposit_date=?, deposited_bank=?, status=?, remark=?, cheque_image=?
-       WHERE id=?`,
+       SET received_date=$1, name=$2, cheque_date=$3, amount=$4, custodian=$5,
+           deposit_date=$6, deposited_bank=$7, status=$8, remark=$9, cheque_image=$10
+       WHERE id=$11`,
       [d.received_date || null, d.name, d.cheque_date || null, d.amount || null,
        d.custodian || null, d.deposit_date || null, d.deposited_bank || null,
-       d.status || 'Pending', d.remark || null, image, req.params.id],
-      (err2) => {
-        if (err2) return res.status(500).json({ error: err2.message });
-        res.json({ message: 'Cheque updated.' });
-      }
+       d.status || 'Pending', d.remark || null, image, req.params.id]
     );
-  });
+    res.json({ message: 'Cheque updated.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// PATCH - Clear cheque (mark as Cleared, set deposit_date and deposited_bank)
-router.patch('/:id/clear', auth, (req, res) => {
+// PATCH – clear cheque
+router.patch('/:id/clear', auth, async (req, res) => {
   const { deposit_date, deposited_bank } = req.body;
   if (!deposit_date || !deposited_bank) {
     return res.status(400).json({ error: 'Deposit Date and Bank Name are required to clear cheque.' });
   }
 
-  db.run(
-    `UPDATE cheques_v2 SET status = 'Cleared', deposit_date = ?, deposited_bank = ? WHERE id = ?`,
-    [deposit_date, deposited_bank, req.params.id],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ message: 'Cheque marked as cleared.' });
-    }
-  );
+  try {
+    await pool.query(
+      `UPDATE cheques_v2 SET status = 'Cleared', deposit_date = $1, deposited_bank = $2 WHERE id = $3`,
+      [deposit_date, deposited_bank, req.params.id]
+    );
+    res.json({ message: 'Cheque marked as cleared.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // DELETE
-router.delete('/:id', auth, (req, res) => {
-  db.run('DELETE FROM cheques_v2 WHERE id = ?', [req.params.id], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM cheques_v2 WHERE id = $1', [req.params.id]);
     res.json({ message: 'Cheque deleted.' });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -3,9 +3,9 @@ const router = express.Router();
 const auth = require('../middlewares/auth');
 const { getActiveAlerts, saveAlertLogs } = require('../services/alertService');
 const { runCheck } = require('../cron/expiryChecker');
-const db = require('../database');
+const pool = require('../database');
 
-// GET /api/alerts — returns current live alerts for the dashboard
+// GET /api/alerts
 router.get('/', auth, async (req, res) => {
   try {
     const alerts = await getActiveAlerts();
@@ -17,15 +17,17 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// GET /api/alerts/logs — returns stored historical log
-router.get('/logs', auth, (req, res) => {
-  db.all('SELECT * FROM alert_logs ORDER BY notified_at DESC LIMIT 200', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+// GET /api/alerts/logs
+router.get('/logs', auth, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM alert_logs ORDER BY notified_at DESC LIMIT 200');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/alerts/trigger — manually trigger a check (for testing)
+// POST /api/alerts/trigger
 router.post('/trigger', auth, async (req, res) => {
   try {
     await runCheck();

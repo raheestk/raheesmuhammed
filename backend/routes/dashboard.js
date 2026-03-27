@@ -1,24 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database');
+const pool = require('../database');
 const auth = require('../middlewares/auth');
 
-router.get('/stats', auth, (req, res) => {
-    const stats = { employees: 0, vehicles: 0, company_documents: 0 };
-    
-    db.get('SELECT COUNT(*) as count FROM employees', [], (err, row) => {
-        if (!err && row) stats.employees = row.count;
-        
-        db.get('SELECT COUNT(*) as count FROM vehicles', [], (err, row) => {
-            if (!err && row) stats.vehicles = row.count;
-            
-            db.get('SELECT COUNT(*) as count FROM company_documents', [], (err, row) => {
-                if (!err && row) stats.company_documents = row.count;
-                
-                res.json(stats);
-            });
+router.get('/stats', auth, async (req, res) => {
+    try {
+        const [empRes, vehRes, compRes] = await Promise.all([
+            pool.query('SELECT COUNT(*) as count FROM employees'),
+            pool.query('SELECT COUNT(*) as count FROM vehicles'),
+            pool.query('SELECT COUNT(*) as count FROM company_documents')
+        ]);
+        res.json({
+            employees: parseInt(empRes.rows[0].count),
+            vehicles: parseInt(vehRes.rows[0].count),
+            company_documents: parseInt(compRes.rows[0].count)
         });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 module.exports = router;
