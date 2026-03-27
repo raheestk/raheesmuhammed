@@ -1,0 +1,26 @@
+# System Files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Environment Variables
+.env
+backend/.env
+frontend/.env
+
+# Build outputs
+frontend/dist/
+
+# Logs and databases (Security & Privacy)
+backend/database.sqlite
+backend/database.sqlite-*
+backend/uploads/
+*.log
+
+# Temp files
+tmp/
+.temp/
